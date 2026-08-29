@@ -2,8 +2,11 @@ import sys
 import socket
 import logging
 import argparse
+import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 from scapy.all import sr1, send, IP, TCP, RandShort
+
 
 # Suppress Scapy's verbose output
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
@@ -19,7 +22,11 @@ def syn_scan(target_ip, port):
         flags="S"
     )
 
-    response = sr1(syn_packet, timeout=1, verbose=0)
+    response = sr1(
+        syn_packet,
+        timeout=1,
+        verbose=0
+    )
 
     # No response
     if response is None:
@@ -36,7 +43,11 @@ def syn_scan(target_ip, port):
                 dport=port,
                 flags="R"
             )
-            send(rst_packet, verbose=0)
+
+            send(
+                rst_packet,
+                verbose=0
+            )
 
             return "Open"
 
@@ -50,7 +61,10 @@ def syn_scan(target_ip, port):
 def identify_service(target_ip, port):
     # Try to get the default service name for the port
     try:
-        service_name = socket.getservbyport(port, "tcp")
+        service_name = socket.getservbyport(
+            port,
+            "tcp"
+        )
     except OSError:
         service_name = "Unknown"
 
@@ -58,15 +72,26 @@ def identify_service(target_ip, port):
 
     try:
         # Create a socket and connect
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        )
+
         s.settimeout(2)
-        s.connect((target_ip, port))
+
+        s.connect(
+            (target_ip, port)
+        )
 
         # Send a basic HTTP request
-        s.send(b"HEAD / HTTP/1.0\r\n\r\n")
+        s.send(
+            b"HEAD / HTTP/1.0\r\n\r\n"
+        )
 
         # Receive the banner
-        banner = s.recv(1024).decode(
+        banner = s.recv(
+            1024
+        ).decode(
             "utf-8",
             errors="ignore"
         ).strip()
@@ -106,11 +131,18 @@ def main():
         help="Ending port for a port range"
     )
 
+    parser.add_argument(
+        "--output",
+        help="Save scan results to a JSON file"
+    )
+
     args = parser.parse_args()
 
     target = args.target
 
-    print(f"[*] Starting scan on target: {target}")
+    print(
+        f"[*] Starting scan on target: {target}"
+    )
 
     # Determine which ports to scan
     if args.ports:
@@ -119,13 +151,25 @@ def main():
                 int(port.strip())
                 for port in args.ports.split(",")
             ]
+
         except ValueError:
             print("[!] Invalid port list.")
             sys.exit(1)
 
-    elif args.start_port is not None and args.end_port is not None:
-        if not (1 <= args.start_port <= args.end_port <= 65535):
-            print("[!] Invalid port range. Use ports 1-65535.")
+    elif (
+        args.start_port is not None
+        and args.end_port is not None
+    ):
+        if not (
+            1 <= args.start_port
+            <= args.end_port
+            <= 65535
+        ):
+            print(
+                "[!] Invalid port range. "
+                "Use ports 1-65535."
+            )
+
             sys.exit(1)
 
         ports_to_scan = range(
@@ -135,9 +179,19 @@ def main():
 
     else:
         ports_to_scan = [
-            21, 22, 23, 25, 53, 80,
-            110, 135, 139, 443,
-            445, 3389, 8080
+            21,
+            22,
+            23,
+            25,
+            53,
+            80,
+            110,
+            135,
+            139,
+            443,
+            445,
+            3389,
+            8080
         ]
 
     print()
@@ -145,40 +199,66 @@ def main():
 
     results = []
 
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    # Scan multiple ports concurrently
+    with ThreadPoolExecutor(
+        max_workers=20
+    ) as executor:
 
         future_to_port = {
-            executor.submit(syn_scan, target, port): port
+            executor.submit(
+                syn_scan,
+                target,
+                port
+            ): port
             for port in ports_to_scan
         }
 
-        for future in as_completed(future_to_port):
+        for future in as_completed(
+            future_to_port
+        ):
             port = future_to_port[future]
 
             try:
                 status = future.result()
+
             except Exception as e:
                 status = "Error"
-                print(f"[!] Port {port}: {e}")
+
+                print(
+                    f"[!] Port {port}: {e}"
+                )
 
             service = ""
             banner = ""
 
             if status == "Open":
-                service, banner = identify_service(target, port)
+                service, banner = identify_service(
+                    target,
+                    port
+                )
 
-            results.append({
-                "port": port,
-                "state": status,
-                "service": service,
-                "banner": banner
-            })
+            results.append(
+                {
+                    "port": port,
+                    "state": status,
+                    "service": service,
+                    "banner": banner
+                }
+            )
 
     # Sort results by port number
-    results.sort(key=lambda x: x["port"])
+    results.sort(
+        key=lambda x: x["port"]
+    )
 
+    # Display results
     print()
-    print(f"{'PORT':<10}{'STATE':<12}{'SERVICE'}")
+    print(
+        f"{'PORT':<10}"
+        f"{'STATE':<12}"
+        f"{'SERVICE'}"
+    )
+
     print("-" * 40)
 
     for result in results:
@@ -189,7 +269,38 @@ def main():
         )
 
         if result["banner"]:
-            print(f"    Banner: {result['banner']}")
+            print(
+                f"    Banner: "
+                f"{result['banner']}"
+            )
+
+    # Save results to JSON if requested
+    if args.output:
+        try:
+            with open(
+                args.output,
+                "w",
+                encoding="utf-8"
+            ) as file:
+
+                json.dump(
+                    {
+                        "target": target,
+                        "results": results
+                    },
+                    file,
+                    indent=4
+                )
+
+            print(
+                f"[*] Results saved to: "
+                f"{args.output}"
+            )
+
+        except OSError as e:
+            print(
+                f"[!] Could not save results: {e}"
+            )
 
     print()
     print("[*] Scan complete.")
