@@ -144,6 +144,18 @@ def main():
         f"[*] Starting scan on target: {target}"
     )
 
+    # Make sure --ports and --start-port/--end-port
+    # are not used together
+    if args.ports and (
+        args.start_port is not None
+        or args.end_port is not None
+    ):
+        print(
+            "[!] Use either --ports or "
+            "--start-port/--end-port, not both."
+        )
+        sys.exit(1)
+
     # Determine which ports to scan
     if args.ports:
         try:
@@ -153,13 +165,37 @@ def main():
             ]
 
         except ValueError:
-            print("[!] Invalid port list.")
+            print(
+                "[!] Invalid port list. "
+                "Use numbers separated by commas."
+            )
+            sys.exit(1)
+
+        # Validate port numbers
+        if not all(
+            1 <= port <= 65535
+            for port in ports_to_scan
+        ):
+            print(
+                "[!] Ports must be between "
+                "1 and 65535."
+            )
+            sys.exit(1)
+
+        # Check for duplicate ports
+        if len(ports_to_scan) != len(
+            set(ports_to_scan)
+        ):
+            print(
+                "[!] Duplicate ports detected."
+            )
             sys.exit(1)
 
     elif (
         args.start_port is not None
         and args.end_port is not None
     ):
+        # Validate port range
         if not (
             1 <= args.start_port
             <= args.end_port
@@ -169,7 +205,6 @@ def main():
                 "[!] Invalid port range. "
                 "Use ports 1-65535."
             )
-
             sys.exit(1)
 
         ports_to_scan = range(
@@ -177,7 +212,18 @@ def main():
             args.end_port + 1
         )
 
+    elif (
+        args.start_port is not None
+        or args.end_port is not None
+    ):
+        print(
+            "[!] Both --start-port and "
+            "--end-port are required."
+        )
+        sys.exit(1)
+
     else:
+        # Default ports
         ports_to_scan = [
             21,
             22,
@@ -195,7 +241,9 @@ def main():
         ]
 
     print()
-    print("[*] Scanning ports concurrently...")
+    print(
+        "[*] Scanning ports concurrently..."
+    )
 
     results = []
 
