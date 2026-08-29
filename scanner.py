@@ -1,6 +1,7 @@
 import sys
 import socket
 import logging
+import argparse
 from scapy.all import sr1, send, IP, TCP, RandShort
 
 # Suppress Scapy's verbose output
@@ -78,35 +79,88 @@ def identify_service(target_ip, port):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python scanner.py <target_ip>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Python TCP SYN Port Scanner"
+    )
 
-    target = sys.argv[1]
+    parser.add_argument(
+        "target",
+        help="Target IP address"
+    )
+
+    parser.add_argument(
+        "--ports",
+        help="Comma-separated list of ports (example: 80,443,8080)"
+    )
+
+    parser.add_argument(
+        "--start-port",
+        type=int,
+        help="Starting port for a port range"
+    )
+
+    parser.add_argument(
+        "--end-port",
+        type=int,
+        help="Ending port for a port range"
+    )
+
+    args = parser.parse_args()
+
+    target = args.target
+
     print(f"[*] Starting scan on target: {target}")
 
-    # Scanning common ports
-    ports_to_scan = [
-        21, 22, 23, 25, 53, 80,
-        110, 135, 139, 443,
-        445, 3389, 8080
-    ]
+    # Determine which ports to scan
+    if args.ports:
+        try:
+            ports_to_scan = [
+                int(port.strip())
+                for port in args.ports.split(",")
+            ]
+        except ValueError:
+            print("[!] Invalid port list.")
+            sys.exit(1)
+
+    elif args.start_port is not None and args.end_port is not None:
+        if not (1 <= args.start_port <= args.end_port <= 65535):
+            print("[!] Invalid port range. Use ports 1-65535.")
+            sys.exit(1)
+
+        ports_to_scan = range(
+            args.start_port,
+            args.end_port + 1
+        )
+
+    else:
+        ports_to_scan = [
+            21, 22, 23, 25, 53, 80,
+            110, 135, 139, 443,
+            445, 3389, 8080
+        ]
+
+    print()
+    print(f"{'PORT':<10}{'STATE':<12}{'SERVICE'}")
+    print("-" * 40)
 
     for port in ports_to_scan:
         status = syn_scan(target, port)
 
-        print(f"[+] Port {port}/tcp: {status}")
+        service = ""
+        banner = ""
 
         if status == "Open":
             service, banner = identify_service(target, port)
 
-            print(f"    -> Service: {service}")
+        print(f"{port:<10}{status:<12}{service}")
 
-            if banner:
-                print(f"    -> Banner: {banner}")
+        if status == "Open" and banner:
+            print(f"    Banner: {banner}")
 
+    print()
     print("[*] Scan complete.")
 
 
 if __name__ == "__main__":
     main()
+
