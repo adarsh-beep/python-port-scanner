@@ -2,6 +2,7 @@ import sys
 import socket
 import logging
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from scapy.all import sr1, send, IP, TCP, RandShort
 
 # Suppress Scapy's verbose output
@@ -140,22 +141,55 @@ def main():
         ]
 
     print()
+    print("[*] Scanning ports concurrently...")
+
+    results = []
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+
+        future_to_port = {
+            executor.submit(syn_scan, target, port): port
+            for port in ports_to_scan
+        }
+
+        for future in as_completed(future_to_port):
+            port = future_to_port[future]
+
+            try:
+                status = future.result()
+            except Exception as e:
+                status = "Error"
+                print(f"[!] Port {port}: {e}")
+
+            service = ""
+            banner = ""
+
+            if status == "Open":
+                service, banner = identify_service(target, port)
+
+            results.append({
+                "port": port,
+                "state": status,
+                "service": service,
+                "banner": banner
+            })
+
+    # Sort results by port number
+    results.sort(key=lambda x: x["port"])
+
+    print()
     print(f"{'PORT':<10}{'STATE':<12}{'SERVICE'}")
     print("-" * 40)
 
-    for port in ports_to_scan:
-        status = syn_scan(target, port)
+    for result in results:
+        print(
+            f"{result['port']:<10}"
+            f"{result['state']:<12}"
+            f"{result['service']}"
+        )
 
-        service = ""
-        banner = ""
-
-        if status == "Open":
-            service, banner = identify_service(target, port)
-
-        print(f"{port:<10}{status:<12}{service}")
-
-        if status == "Open" and banner:
-            print(f"    Banner: {banner}")
+        if result["banner"]:
+            print(f"    Banner: {result['banner']}")
 
     print()
     print("[*] Scan complete.")
@@ -163,4 +197,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
